@@ -1,0 +1,11 @@
+# www.robotstxt.org
+
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://signai.app/sitemap.xml
+
+# Disallow API proxy routes
+Disallow: /api/
