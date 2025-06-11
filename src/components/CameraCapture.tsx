@@ -28,26 +28,73 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
   const CLOUDINARY_CLOUD_NAME = 'dzonya1wx'; // Replace with your Cloudinary cloud name
   const CLOUDINARY_UPLOAD_PRESET = 'signai'; // Replace with your upload preset
 
+  // Define a function to stop tracks without dependencies
+  const stopTracks = (mediaStream: MediaStream) => {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => {
+        track.stop();
+      });
+    }
+  };
+
+  // Define stopCamera without dependencies on startCamera
+  const stopCamera = useCallback(() => {
+    if (stream) {
+      stopTracks(stream);
+      setStream(null);
+
+      // Clear video source
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    }
+  }, [stream]);
+
   const startCamera = useCallback(async () => {
     try {
+      // Stop any existing stream first to prevent conflicts
+      if (stream) {
+        stopTracks(stream);
+        // Don't call stopCamera() here to avoid circular dependency
+      }
+
+      // Request camera access with more flexible constraints
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
         audio: false
       });
 
+      // Set stream state
       setStream(mediaStream);
+
       if (videoRef.current) {
+        // Clear any previous sources
+        videoRef.current.srcObject = null;
+
+        // Set the new stream
         videoRef.current.srcObject = mediaStream;
+
+        // Add event listeners for better error handling
+        videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            videoRef.current.play().catch(e => {
+              console.error('Error playing video:', e);
+              setError('Failed to play video stream. Please refresh and try again.');
+            });
+          }
+        };
+
+        videoRef.current.onerror = () => {
+          setError('Video playback error. Please refresh and try again.');
+        };
       }
     } catch (err) {
+      console.error('Camera access error:', err);
       setError('Failed to access camera. Please ensure you have granted camera permissions.');
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
     }
   }, [stream]);
 
@@ -55,9 +102,25 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
     if (!stream) return;
 
     recordedChunksRef.current = [];
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'video/webm;codecs=vp9'
-    });
+
+    // Try to use a more widely supported codec, with fallbacks
+    let options = {};
+    const mimeTypes = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4'
+    ];
+
+    for (const mimeType of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        options = { mimeType };
+        break;
+      }
+    }
+
+    const mediaRecorder = new MediaRecorder(stream, options);
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
@@ -155,15 +218,48 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
     }
   };
 
-  const resetCapture = () => {
+  // Add a ref to track reset in progress
+  const isResettingRef = useRef(false);
+
+  const resetCapture = useCallback(async () => {
+    // Prevent multiple simultaneous resets
+    if (isResettingRef.current) return;
+    isResettingRef.current = true;
+
+    // Reset all states
     setRecordedVideo(null);
     setTranslationResult(null);
     setError(null);
     setUploading(false);
     setProcessing(false);
     setCopied(false);
-    startCamera();
-  };
+
+    // Clear recorded chunks
+    recordedChunksRef.current = [];
+
+    // Stop current stream if exists
+    if (stream) {
+      stopTracks(stream);
+    }
+
+    // Set stream to null to show loading indicator
+    setStream(null);
+
+    // Reinitialize camera with a small delay to ensure clean restart
+    setTimeout(async () => {
+      try {
+        await startCamera();
+        // The video will automatically transition in with opacity
+        // due to the stream state change and onCanPlay handler
+      } catch (err) {
+        console.error('Camera reset error:', err);
+        setError('Failed to restart camera. Please refresh and try again.');
+      } finally {
+        // Reset the flag when done, regardless of success or failure
+        isResettingRef.current = false;
+      }
+    }, 500); // Slightly longer delay for smoother transition
+  }, [stream, startCamera]);
 
   const handleTranslate = async () => {
     if (recordedChunksRef.current.length === 0) return;
@@ -195,12 +291,52 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
     }
   };
 
+  // Initialize camera when component mounts - use ref to prevent multiple initializations
+  const hasInitializedRef = useRef(false);
+
   React.useEffect(() => {
-    startCamera();
-    return () => {
-      stopCamera();
+    let mounted = true;
+
+    const initCamera = async () => {
+      // Only initialize once
+      if (hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
+
+      try {
+        // Start with loading state
+        if (mounted) {
+          // Stream is already null by default, which will show the loading indicator
+
+          // Small delay before starting camera to ensure loading indicator is visible
+          setTimeout(async () => {
+            if (mounted) {
+              await startCamera();
+              // The video will automatically transition in with opacity
+              // due to the stream state change and onCanPlay handler
+            }
+          }, 300);
+        }
+      } catch (err) {
+        console.error('Camera initialization error:', err);
+        if (mounted) {
+          setError('Failed to initialize camera. Please refresh and try again.');
+          hasInitializedRef.current = false; // Allow retry on error
+        }
+      }
     };
-  }, [startCamera, stopCamera]);
+
+    // Initialize camera
+    initCamera();
+
+    // Cleanup function
+    return () => {
+      mounted = false;
+      if (stream) {
+        stopTracks(stream);
+        setStream(null);
+      }
+    };
+  }, []); // Empty dependency array to ensure it only runs once
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -232,8 +368,31 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
                   autoPlay
                   muted
                   playsInline
-                  className="w-full aspect-video object-cover"
+                  width="100%"
+                  height="auto"
+                  className="w-full aspect-video object-cover bg-black relative z-0"
+                  style={{ 
+                    minHeight: "300px",
+                    transform: "scaleX(1)", // Ensure correct orientation
+                    opacity: stream ? 1 : 0,
+                    transition: "opacity 0.3s ease-in-out"
+                  }}
+                  onCanPlay={() => {
+                    // Ensure video is visible and playing when it can play
+                    if (videoRef.current) {
+                      videoRef.current.style.opacity = "1";
+                      videoRef.current.play().catch(e => {
+                        console.error('Error playing video on canplay event:', e);
+                      });
+                    }
+                  }}
                 />
+
+                {/* Fallback when camera is initializing or has errors */}
+                <div className={`absolute inset-0 flex items-center justify-center bg-black z-10 transition-opacity duration-300 ${stream ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                  <Loader2 className="w-10 h-10 text-white animate-spin" />
+                  <p className="text-white ml-3">Initializing camera...</p>
+                </div>
 
                 {/* Recording Indicator */}
                 {isRecording && (
