@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Camera, Square, Play, Loader2, CheckCircle, AlertCircle, X, Copy } from 'lucide-react';
+import { Camera, Square, Play, Loader2, CheckCircle, AlertCircle, X, Copy, Zap } from 'lucide-react';
 
 interface CameraCaptureProps {
   onClose: () => void;
