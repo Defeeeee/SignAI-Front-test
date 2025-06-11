@@ -69,7 +69,8 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
       const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
       const videoUrl = URL.createObjectURL(blob);
       setRecordedVideo(videoUrl);
-      uploadVideo(blob);
+      // Store the blob for later use
+      recordedChunksRef.current = [blob];
     };
 
     mediaRecorderRef.current = mediaRecorder;
@@ -115,13 +116,13 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
       const videoUrl = cloudinaryData.secure_url;
 
       setUploading(false);
+      setRecordedVideo(videoUrl);
 
-      // Process with AI
-      await processVideo(videoUrl);
-
+      return videoUrl;
     } catch (err) {
       setUploading(false);
       setError(err instanceof Error ? err.message : 'Upload failed. Please check your Cloudinary configuration.');
+      return null;
     }
   };
 
@@ -164,6 +165,24 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
     startCamera();
   };
 
+  const handleTranslate = async () => {
+    if (recordedChunksRef.current.length === 0) return;
+
+    const blob = recordedChunksRef.current[0];
+    const videoUrl = await uploadVideo(blob);
+
+    // If we have a video URL from Cloudinary, process it
+    if (videoUrl) {
+      // Update the video element to use the Cloudinary URL
+      if (videoRef.current) {
+        videoRef.current.src = videoUrl;
+        videoRef.current.load();
+      }
+
+      await processVideo(videoUrl);
+    }
+  };
+
   const copyToClipboard = async () => {
     if (translationResult?.prediction) {
       try {
@@ -190,7 +209,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Record Sign Language</h2>
-            <p className="text-gray-600 mt-1">Record your sign language and get instant AI-powered translation</p>
+            <p className="text-gray-600 mt-1">Record your sign language video, then translate it with our AI</p>
           </div>
           <button
             onClick={() => {
@@ -247,6 +266,13 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
 
               {/* Instructions */}
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+                <h3 className="font-semibold text-blue-900 mb-2">How It Works</h3>
+                <ol className="text-blue-800 text-sm space-y-2 list-decimal list-inside mb-4">
+                  <li>Record your sign language video using the camera</li>
+                  <li>Review your recording to ensure it's clear</li>
+                  <li>Click "Translate Now" to process with our AI</li>
+                  <li>View and copy your translation results</li>
+                </ol>
                 <h3 className="font-semibold text-blue-900 mb-2">Recording Tips</h3>
                 <ul className="text-blue-800 text-sm space-y-1">
                   <li>• Ensure good lighting and clear visibility of your hands</li>
@@ -353,6 +379,15 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onClose }) => {
                   <Camera className="w-5 h-5" />
                   <span>Record Another</span>
                 </button>
+                {!translationResult && !processing && !uploading && (
+                  <button
+                    onClick={handleTranslate}
+                    className="px-6 py-3 bg-gradient-to-r from-[#FF7A00] to-[#A100FF] text-white rounded-full font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center justify-center space-x-2"
+                  >
+                    <Zap className="w-5 h-5" />
+                    <span>Translate Now</span>
+                  </button>
+                )}
                 {translationResult && (
                   <button
                     onClick={copyToClipboard}
