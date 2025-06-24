@@ -282,7 +282,7 @@ const VideoUpload: React.FC<VideoUploadProps> = ({ onClose }) => {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <p className="text-lg text-gray-900 leading-relaxed font-medium">
-                              "{translationResult.prediction}"
+                              "{translationResult.translation}"
                             </p>
                             {translationResult.confidence && (
                               <p className="text-sm text-gray-600 mt-3 flex items-center space-x-2">
