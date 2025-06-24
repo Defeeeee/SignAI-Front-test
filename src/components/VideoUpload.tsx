@@ -107,7 +107,7 @@ const VideoUpload: React.FC<VideoUploadProps> = ({ onClose }) => {
 
     try {
       const response = await fetch(
-        `https://signai.fdiaznem.com.ar/predict?video_url=${encodeURIComponent(videoUrl)}`,
+        `https://signai.fdiaznem.com.ar/predict_gemini?video_url=${encodeURIComponent(videoUrl)}`,
         {
           method: 'GET',
           headers: {
